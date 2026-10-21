@@ -175,7 +175,8 @@ def compute_noise_psd(w_rad_s, T_kelvin, Re_Z):
 
 def calculate_transition_rates(system_data, T_kelvin, env_type, params):
     """
-    Calculates transition rates Gamma_{j -> i} for all level pairs (j != i).
+    Calculates transition rates Gamma_{j -> i} for allowed level pairs (j != i and |j - i| is odd).
+    Forbidden transitions (|j - i| is even) are excluded. Rate values are in MHz.
     """
     evals_ghz = system_data['evals_ghz']
     n_mat = system_data['n_mat']
@@ -188,6 +189,10 @@ def calculate_transition_rates(system_data, T_kelvin, env_type, params):
     for j in range(N_LEVELS): # Initial state j
         for i in range(N_LEVELS): # Final state i
             if i == j:
+                continue
+
+            # Filter forbidden transitions (even energy level difference |j - i|)
+            if abs(j - i) % 2 == 0:
                 continue
 
             # Energy difference E_j - E_i (GHz)
@@ -209,16 +214,17 @@ def calculate_transition_rates(system_data, T_kelvin, env_type, params):
 
             # Fermi's Golden Rule rate Gamma_{j -> i}
             # Gamma = (2e / hbar)^2 * |n_ij|^2 * S_VV(w)
-            rate = ((2.0 * e / hbar)**2) * n_element_sq * S_vv
+            rate_hz = ((2.0 * e / hbar)**2) * n_element_sq * S_vv
+            rate_mhz = rate_hz / 1e6 # Convert rate to MHz
 
-            if rate > 0:
+            if rate_mhz > 0:
                 transitions.append({
                     'from': j,
                     'to': i,
                     'label': f"{j}->{i}",
                     'transition_type': 'decay' if j > i else 'excitation',
                     'energy_ghz': abs_delta_E_ghz,
-                    'rate_s1': rate
+                    'rate_mhz': rate_mhz
                 })
 
     return transitions
@@ -251,27 +257,27 @@ def create_base_plot(transitions, env_name, temp_str, filename, ylim=None):
 
     if decays:
         x_d = [t['energy_ghz'] for t in decays]
-        y_d = [t['rate_s1'] for t in decays]
+        y_d = [t['rate_mhz'] for t in decays]
         ax.scatter(x_d, y_d, color='blue', s=70, zorder=4, label='Decay ($j \\to i$, $j > i$)')
 
         for t in decays:
-            ax.annotate(t['label'], (t['energy_ghz'], t['rate_s1']),
+            ax.annotate(t['label'], (t['energy_ghz'], t['rate_mhz']),
                         textcoords="offset points", xytext=(5, 5), ha='left',
                         fontsize=9, color='darkblue', fontweight='bold')
 
     if excitations:
         x_e = [t['energy_ghz'] for t in excitations]
-        y_e = [t['rate_s1'] for t in excitations]
+        y_e = [t['rate_mhz'] for t in excitations]
         ax.scatter(x_e, y_e, color='red', marker='^', s=70, zorder=4, label='Excitation ($j \\to i$, $j < i$)')
 
         for t in excitations:
-            ax.annotate(t['label'], (t['energy_ghz'], t['rate_s1']),
+            ax.annotate(t['label'], (t['energy_ghz'], t['rate_mhz']),
                         textcoords="offset points", xytext=(5, -12), ha='left',
                         fontsize=9, color='darkred', fontweight='bold')
 
     apply_unified_log_axes(ax, ylim)
     ax.set_xlabel('Transition Energy $\\hbar\\omega_{ij} / h$ (GHz)')
-    ax.set_ylabel('Transition Rate $\\Gamma_{j \\to i}$ (s$^{-1}$)')
+    ax.set_ylabel('Transition Rate $\\Gamma_{j \\to i}$ (MHz)')
     ax.set_title(f'Fluxonium Transition Rates ({env_name}, T = {temp_str})')
     ax.legend(loc='upper left')
 
@@ -288,23 +294,23 @@ def create_temp_overlay_plot(trans_0K, trans_70mK, env_name, filename, ylim=None
     fig, ax = plt.subplots(figsize=(8.5, 7))
 
     x_0 = [t['energy_ghz'] for t in trans_0K]
-    y_0 = [t['rate_s1'] for t in trans_0K]
+    y_0 = [t['rate_mhz'] for t in trans_0K]
     ax.scatter(x_0, y_0, color='blue', s=80, marker='o', alpha=0.8, zorder=4, label='T = 0 K (Decay only)')
 
     x_70 = [t['energy_ghz'] for t in trans_70mK]
-    y_70 = [t['rate_s1'] for t in trans_70mK]
+    y_70 = [t['rate_mhz'] for t in trans_70mK]
     ax.scatter(x_70, y_70, color='crimson', s=60, marker='x', zorder=5, label='T = 70 mK (Decay + Excitation)')
 
     for t in trans_70mK:
         color = 'darkred' if t['transition_type'] == 'excitation' else 'darkblue'
         offset = (5, -10) if t['transition_type'] == 'excitation' else (5, 5)
-        ax.annotate(t['label'], (t['energy_ghz'], t['rate_s1']),
+        ax.annotate(t['label'], (t['energy_ghz'], t['rate_mhz']),
                     textcoords="offset points", xytext=offset, ha='left',
                     fontsize=8.5, color=color)
 
     apply_unified_log_axes(ax, ylim)
     ax.set_xlabel('Transition Energy $\\hbar\\omega_{ij} / h$ (GHz)')
-    ax.set_ylabel('Transition Rate $\\Gamma_{j \\to i}$ (s$^{-1}$)')
+    ax.set_ylabel('Transition Rate $\\Gamma_{j \\to i}$ (MHz)')
     ax.set_title(f'Temperature Overlay: 0 K vs 70 mK ({env_name})')
     ax.legend(loc='upper left')
 
@@ -321,21 +327,21 @@ def create_env_overlay_plot(trans_TL, trans_BPF, temp_str, filename, ylim=None):
     fig, ax = plt.subplots(figsize=(8.5, 7))
 
     x_tl = [t['energy_ghz'] for t in trans_TL]
-    y_tl = [t['rate_s1'] for t in trans_TL]
+    y_tl = [t['rate_mhz'] for t in trans_TL]
     ax.scatter(x_tl, y_tl, color='teal', s=80, marker='s', alpha=0.8, zorder=4, label='Transmission Line ($Z_0 = 50\\,\\Omega$)')
 
     x_bpf = [t['energy_ghz'] for t in trans_BPF]
-    y_bpf = [t['rate_s1'] for t in trans_BPF]
+    y_bpf = [t['rate_mhz'] for t in trans_BPF]
     ax.scatter(x_bpf, y_bpf, color='magenta', s=80, marker='D', alpha=0.8, zorder=5, label='Bandpass Filter (Purcell Protected)')
 
     for t in trans_BPF:
-        ax.annotate(t['label'], (t['energy_ghz'], t['rate_s1']),
+        ax.annotate(t['label'], (t['energy_ghz'], t['rate_mhz']),
                     textcoords="offset points", xytext=(5, 5), ha='left',
                     fontsize=8.5, color='darkmagenta')
 
     apply_unified_log_axes(ax, ylim)
     ax.set_xlabel('Transition Energy $\\hbar\\omega_{ij} / h$ (GHz)')
-    ax.set_ylabel('Transition Rate $\\Gamma_{j \\to i}$ (s$^{-1}$)')
+    ax.set_ylabel('Transition Rate $\\Gamma_{j \\to i}$ (MHz)')
     ax.set_title(f'Environment Overlay: Transmission Line vs BPF (T = {temp_str})')
     ax.legend(loc='upper left')
 
@@ -410,14 +416,14 @@ def main():
             all_results[env_key][T_str] = rates
 
             for t in rates:
-                if t['rate_s1'] > 0:
-                    all_rates_list.append(t['rate_s1'])
+                if t['rate_mhz'] > 0:
+                    all_rates_list.append(t['rate_mhz'])
 
             print(f"\n---> Environment: {env_name} | Temperature: {T_str}")
-            print(f"{'Transition':<12} {'Type':<12} {'Energy (GHz)':<15} {'Rate (s^-1)':<15}")
+            print(f"{'Transition':<12} {'Type':<12} {'Energy (GHz)':<15} {'Rate (MHz)':<15}")
             print("-" * 55)
             for t in sorted(rates, key=lambda x: x['label']):
-                print(f"{t['label']:<12} {t['transition_type']:<12} {t['energy_ghz']:<15.4f} {t['rate_s1']:<15.4e}")
+                print(f"{t['label']:<12} {t['transition_type']:<12} {t['energy_ghz']:<15.4f} {t['rate_mhz']:<15.4e}")
 
     # Determine global Y-axis bounds rounded to power-of-10 decade boundaries
     if all_rates_list:
@@ -427,10 +433,10 @@ def main():
         y_max_pow = int(np.ceil(np.log10(max_rate)))
         global_ylim = (10.0**y_min_pow, 10.0**y_max_pow)
     else:
-        global_ylim = (1e-35, 1e10)
+        global_ylim = (1e-41, 1e4)
 
     print("\n" + "=" * 70)
-    print(f"GLOBAL UNIFIED Y-AXIS SCALE: {global_ylim[0]:.1e} to {global_ylim[1]:.1e} s^-1")
+    print(f"GLOBAL UNIFIED Y-AXIS SCALE: {global_ylim[0]:.1e} to {global_ylim[1]:.1e} MHz")
     print("=" * 70)
 
     # 4. Generate Base Plots with unified Y-limits
