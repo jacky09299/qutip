@@ -11,6 +11,7 @@ if '' in sys.path:
 import numpy as np
 import scipy.constants as const
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import qutip as qt
 import scqubits as scq
 
@@ -223,11 +224,26 @@ def calculate_transition_rates(system_data, T_kelvin, env_type, params):
     return transitions
 
 
-def create_base_plot(transitions, env_name, temp_str, filename):
+def apply_unified_log_axes(ax, ylim):
+    """
+    Applies unified log y-scale, decade major grid lines, and lighter minor grid lines.
+    """
+    ax.set_yscale('log')
+    if ylim is not None:
+        ax.set_ylim(ylim)
+
+    ax.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=100))
+    ax.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs=np.arange(2, 10) * 0.1, numticks=100))
+
+    ax.grid(True, which="major", color="gray", linestyle="-", linewidth=0.7, alpha=0.6)
+    ax.grid(True, which="minor", color="gray", linestyle=":", linewidth=0.4, alpha=0.4)
+
+
+def create_base_plot(transitions, env_name, temp_str, filename, ylim=None):
     """
     Generates one of the 6 individual transition rate vs transition frequency plots.
     """
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(8.5, 7))
 
     # Split into decay (j > i) and excitation (j < i)
     decays = [t for t in transitions if t['transition_type'] == 'decay']
@@ -253,11 +269,10 @@ def create_base_plot(transitions, env_name, temp_str, filename):
                         textcoords="offset points", xytext=(5, -12), ha='left',
                         fontsize=9, color='darkred', fontweight='bold')
 
-    ax.set_yscale('log')
+    apply_unified_log_axes(ax, ylim)
     ax.set_xlabel('Transition Energy $\\hbar\\omega_{ij} / h$ (GHz)')
     ax.set_ylabel('Transition Rate $\\Gamma_{j \\to i}$ (s$^{-1}$)')
     ax.set_title(f'Fluxonium Transition Rates ({env_name}, T = {temp_str})')
-    ax.grid(True, which="both", ls="--", alpha=0.5)
     ax.legend(loc='upper left')
 
     plt.tight_layout()
@@ -266,11 +281,11 @@ def create_base_plot(transitions, env_name, temp_str, filename):
     print(f"Saved plot: {filename}")
 
 
-def create_temp_overlay_plot(trans_0K, trans_70mK, env_name, filename):
+def create_temp_overlay_plot(trans_0K, trans_70mK, env_name, filename, ylim=None):
     """
     Generates overlay plot comparing T = 0 K vs T = 70 mK for a given environment.
     """
-    fig, ax = plt.subplots(figsize=(8.5, 6))
+    fig, ax = plt.subplots(figsize=(8.5, 7))
 
     x_0 = [t['energy_ghz'] for t in trans_0K]
     y_0 = [t['rate_s1'] for t in trans_0K]
@@ -287,11 +302,10 @@ def create_temp_overlay_plot(trans_0K, trans_70mK, env_name, filename):
                     textcoords="offset points", xytext=offset, ha='left',
                     fontsize=8.5, color=color)
 
-    ax.set_yscale('log')
+    apply_unified_log_axes(ax, ylim)
     ax.set_xlabel('Transition Energy $\\hbar\\omega_{ij} / h$ (GHz)')
     ax.set_ylabel('Transition Rate $\\Gamma_{j \\to i}$ (s$^{-1}$)')
     ax.set_title(f'Temperature Overlay: 0 K vs 70 mK ({env_name})')
-    ax.grid(True, which="both", ls="--", alpha=0.5)
     ax.legend(loc='upper left')
 
     plt.tight_layout()
@@ -300,11 +314,11 @@ def create_temp_overlay_plot(trans_0K, trans_70mK, env_name, filename):
     print(f"Saved overlay plot: {filename}")
 
 
-def create_env_overlay_plot(trans_TL, trans_BPF, temp_str, filename):
+def create_env_overlay_plot(trans_TL, trans_BPF, temp_str, filename, ylim=None):
     """
     Generates overlay plot comparing Transmission Line vs Bandpass Filter for a given temperature.
     """
-    fig, ax = plt.subplots(figsize=(8.5, 6))
+    fig, ax = plt.subplots(figsize=(8.5, 7))
 
     x_tl = [t['energy_ghz'] for t in trans_TL]
     y_tl = [t['rate_s1'] for t in trans_TL]
@@ -319,11 +333,10 @@ def create_env_overlay_plot(trans_TL, trans_BPF, temp_str, filename):
                     textcoords="offset points", xytext=(5, 5), ha='left',
                     fontsize=8.5, color='darkmagenta')
 
-    ax.set_yscale('log')
+    apply_unified_log_axes(ax, ylim)
     ax.set_xlabel('Transition Energy $\\hbar\\omega_{ij} / h$ (GHz)')
     ax.set_ylabel('Transition Rate $\\Gamma_{j \\to i}$ (s$^{-1}$)')
     ax.set_title(f'Environment Overlay: Transmission Line vs BPF (T = {temp_str})')
-    ax.grid(True, which="both", ls="--", alpha=0.5)
     ax.legend(loc='upper left')
 
     plt.tight_layout()
@@ -384,6 +397,7 @@ def main():
     ]
 
     all_results = {}
+    all_rates_list = []
 
     print("\n" + "=" * 70)
     print("SIMULATION RESULTS TABLE")
@@ -395,17 +409,38 @@ def main():
             rates = calculate_transition_rates(system_data, T_k, env_key, env_params)
             all_results[env_key][T_str] = rates
 
+            for t in rates:
+                if t['rate_s1'] > 0:
+                    all_rates_list.append(t['rate_s1'])
+
             print(f"\n---> Environment: {env_name} | Temperature: {T_str}")
             print(f"{'Transition':<12} {'Type':<12} {'Energy (GHz)':<15} {'Rate (s^-1)':<15}")
             print("-" * 55)
             for t in sorted(rates, key=lambda x: x['label']):
                 print(f"{t['label']:<12} {t['transition_type']:<12} {t['energy_ghz']:<15.4f} {t['rate_s1']:<15.4e}")
 
-            # Plot individual base plot (1 of 6)
-            filename = os.path.join(out_dir, f"1_base_{env_key}_{T_str}.png")
-            create_base_plot(rates, env_name, T_str, filename)
+    # Determine global Y-axis bounds rounded to power-of-10 decade boundaries
+    if all_rates_list:
+        min_rate = min(all_rates_list)
+        max_rate = max(all_rates_list)
+        y_min_pow = int(np.floor(np.log10(min_rate)))
+        y_max_pow = int(np.ceil(np.log10(max_rate)))
+        global_ylim = (10.0**y_min_pow, 10.0**y_max_pow)
+    else:
+        global_ylim = (1e-35, 1e10)
 
-    # 4. Generate Overlay Plots
+    print("\n" + "=" * 70)
+    print(f"GLOBAL UNIFIED Y-AXIS SCALE: {global_ylim[0]:.1e} to {global_ylim[1]:.1e} s^-1")
+    print("=" * 70)
+
+    # 4. Generate Base Plots with unified Y-limits
+    for env_key, env_name in environments:
+        for _, T_str in temperatures:
+            rates = all_results[env_key][T_str]
+            filename = os.path.join(out_dir, f"1_base_{env_key}_{T_str}.png")
+            create_base_plot(rates, env_name, T_str, filename, ylim=global_ylim)
+
+    # 5. Generate Overlay Plots with unified Y-limits
     print("\n" + "=" * 70)
     print("GENERATING OVERLAY PLOTS")
     print("=" * 70)
@@ -413,14 +448,14 @@ def main():
     # 0K vs 70mK Overlays for each environment (3 plots)
     for env_key, env_name in environments:
         filename = os.path.join(out_dir, f"2_overlay_temp_{env_key}_0K_vs_70mK.png")
-        create_temp_overlay_plot(all_results[env_key]['0K'], all_results[env_key]['70mK'], env_name, filename)
+        create_temp_overlay_plot(all_results[env_key]['0K'], all_results[env_key]['70mK'], env_name, filename, ylim=global_ylim)
 
     # TL vs BPF Overlays for each temperature (2 plots)
     for _, T_str in temperatures:
         filename = os.path.join(out_dir, f"3_overlay_env_TL_vs_BPF_{T_str}.png")
         create_env_overlay_plot(all_results['transmission_line'][T_str],
                                 all_results['multi_stage_bpf'][T_str],
-                                T_str, filename)
+                                T_str, filename, ylim=global_ylim)
 
 
 if __name__ == '__main__':
